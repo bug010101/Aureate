@@ -25,6 +25,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
+          cache-on-failure: "true"
 
       # The Tauri CLI is a Rust binary; installing it here keeps the build
       # free of any JavaScript package manager.
@@ -40,7 +41,7 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          find crates/aur-app/target -type f -name '*.dmg' -exec cp {} dist/ \;
+          find . -type f -name '*.dmg' -not -path './dist/*' -exec cp {} dist/ \;
           ls -lh dist
 
       - uses: actions/upload-artifact@v4
