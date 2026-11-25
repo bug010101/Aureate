@@ -1,0 +1,20 @@
+[package]
+name = "aur-export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+aur-core = { path = "../aur-core" }
+typst = { workspace = true }
+typst-pdf = { workspace = true }
+typst-layout = "0.15.1"
+typst-svg = { workspace = true }
+typst-assets = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+walkdir = { workspace = true }
+chrono = { workspace = true }

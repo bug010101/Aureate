@@ -1,0 +1,17 @@
+# Build output
+/target
+**/target
+
+# Tauri generated schemas
+crates/aur-app/gen/
+
+# Local vaults created while testing
+*.aureate-tmp
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.iml
+*.swp

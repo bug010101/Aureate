@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Aureate main window: local file access through the Rust backend, native dialogs for folders and saving PDFs.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "opener:default"
+  ]
+}
