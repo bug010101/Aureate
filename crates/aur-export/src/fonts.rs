@@ -105,9 +105,16 @@ fn cache() -> &'static Mutex<Vec<(String, Arc<FontSet>)>> {
 
 /// Load fonts from a set of directories / files, with caching.
 pub fn load(paths: &[PathBuf]) -> Arc<FontSet> {
+    load_embedded(paths, &[])
+}
+
+/// Same as `load`, but with fonts embedded directly in the binary.  The
+/// embedded set is always present, so packaging never needs to copy files.
+pub fn load_embedded(paths: &[PathBuf], embedded: &[(&'static str, Vec<u8>)]) -> Arc<FontSet> {
     let key = paths
         .iter()
         .map(|p| p.to_string_lossy().to_string())
+        .chain(embedded.iter().map(|(n, _)| n.to_string()))
         .collect::<Vec<_>>()
         .join("|");
 
@@ -117,7 +124,7 @@ pub fn load(paths: &[PathBuf]) -> Arc<FontSet> {
         }
     }
 
-    let set = Arc::new(load_uncached(paths));
+    let set = Arc::new(load_uncached_with_embedded(paths, embedded));
     if let Ok(mut cache) = cache().lock() {
         cache.push((key, set.clone()));
     }
@@ -153,7 +160,7 @@ fn is_font(path: &Path) -> bool {
     )
 }
 
-fn load_uncached(paths: &[PathBuf]) -> FontSet {
+fn load_uncached_with_embedded(paths: &[PathBuf], embedded: &[(&'static str, Vec<u8>)]) -> FontSet {
     let mut fonts: Vec<Font> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut warnings = Vec::new();
@@ -165,6 +172,22 @@ fn load_uncached(paths: &[PathBuf]) -> FontSet {
             if seen.insert(id) {
                 fonts.push(font);
             }
+        }
+    }
+
+    // Fonts compiled into the binary — always available, even in a
+    // read-only install.
+    for (name, data) in embedded {
+        let mut any = false;
+        for font in Font::iter(Bytes::new(data.clone())) {
+            any = true;
+            let id = font_id(&font);
+            if seen.insert(id) {
+                fonts.push(font);
+            }
+        }
+        if !any {
+            warnings.push(format!("内嵌字体格式无法识别：{name}"));
         }
     }
 

@@ -63,6 +63,7 @@ pub struct Backlink {
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Ledger {
     pub total: usize,
     pub todo: usize,

@@ -1,17 +1,15 @@
-//! Application state: the open vault, its index, and the font paths.
+//! Application state: the open vault, its index, and font lookup paths.
+//! Pure Rust — no webview, no shell bindings.
 
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
 
 use aur_index::Index;
-use aur_vault::{FsStorage, WatchHandle};
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use aur_vault::{Change, FsStorage, WatchHandle};
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct VaultInfo {
-    pub root: String,
     pub name: String,
     pub docs: usize,
     pub cards: usize,
@@ -24,8 +22,8 @@ pub struct VaultCtx {
     pub root: PathBuf,
     pub storage: FsStorage,
     pub index: Mutex<Index>,
+    #[allow(dead_code)]
     pub watch: Mutex<Option<WatchHandle>>,
-    /// `"file"` or `"memory"` — see `VaultInfo::index_mode`.
     pub index_mode: String,
 }
 
@@ -36,58 +34,38 @@ impl VaultCtx {
             .ok()
             .map(|r| r.to_string_lossy().replace('\\', "/"))
     }
+
+    pub fn info(&self) -> VaultInfo {
+        let index = self.index.lock().ok();
+        VaultInfo {
+            name: self
+                .root
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Aureate".into()),
+            docs: index.as_ref().map(|i| i.count().unwrap_or(0)).unwrap_or(0),
+            cards: index
+                .as_ref()
+                .map(|i| i.cards().map(|c| c.len()).unwrap_or(0))
+                .unwrap_or(0),
+            index_mode: self.index_mode.clone(),
+        }
+    }
 }
 
 pub struct AppState {
     vault: RwLock<Option<Arc<VaultCtx>>>,
-    fonts: Mutex<Vec<PathBuf>>,
-    /// Files this session produced (exported PDFs).  They may live outside the
-    /// working folder, and they are the only outside paths we will open.
-    exports: Mutex<Vec<PathBuf>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         AppState {
             vault: RwLock::new(None),
-            fonts: Mutex::new(Vec::new()),
-            exports: Mutex::new(Vec::new()),
         }
     }
 }
 
 impl AppState {
-    pub fn set_fonts(&self, fonts: Vec<PathBuf>) {
-        if let Ok(mut slot) = self.fonts.lock() {
-            *slot = fonts;
-        }
-    }
-
-    pub fn remember_export(&self, path: &Path) {
-        let Ok(real) = path.canonicalize() else {
-            return;
-        };
-        if let Ok(mut list) = self.exports.lock() {
-            if list.len() > 32 {
-                list.remove(0);
-            }
-            if !list.contains(&real) {
-                list.push(real);
-            }
-        }
-    }
-
-    pub fn is_export(&self, path: &Path) -> bool {
-        self.exports
-            .lock()
-            .map(|l| l.iter().any(|p| p == path))
-            .unwrap_or(false)
-    }
-
-    pub fn fonts(&self) -> Vec<PathBuf> {
-        self.fonts.lock().map(|f| f.clone()).unwrap_or_default()
-    }
-
     pub fn vault(&self) -> Result<Arc<VaultCtx>, String> {
         self.vault
             .read()
@@ -100,25 +78,27 @@ impl AppState {
         self.vault.read().ok().and_then(|v| v.clone())
     }
 
-    pub fn open(&self, app: &AppHandle, path: &str) -> Result<VaultInfo, String> {
+    /// Open a folder as the working vault.  File-system changes are forwarded
+    /// to `on_change` (the UI polls a channel) when given.
+    pub fn open(
+        &self,
+        path: &str,
+        on_change: Option<mpsc::Sender<Change>>,
+    ) -> Result<VaultInfo, String> {
         let storage = FsStorage::new(path)
             .map_err(|e| e.to_string())?
-            .with_trash_dir(trash_dir(app, Path::new(path)));
+            .with_trash_dir(trash_dir(Path::new(path)));
         storage.ensure_layout().map_err(|e| e.to_string())?;
 
         // The index is a disposable cache, so it lives in the app's own data
-        // directory — never inside the user's folder of notes, and never in a
-        // location macOS/Windows may guard behind a permission prompt.
-        let (index, index_mode) = match open_index(app, storage.root()) {
+        // directory — never inside the user's folder of notes.
+        let (index, index_mode) = match open_index(storage.root()) {
             Ok(index) => (index, "file"),
             Err(_) => (
                 Index::open_in_memory().map_err(|e| e.to_string())?,
                 "memory",
             ),
         };
-        let docs = index.rebuild(storage.root()).unwrap_or(0);
-        let cards = index.cards().map(|c| c.len()).unwrap_or(0);
-
         let ctx = Arc::new(VaultCtx {
             root: storage.root().to_path_buf(),
             storage,
@@ -126,26 +106,35 @@ impl AppState {
             watch: Mutex::new(None),
             index_mode: index_mode.to_string(),
         });
+        let docs = ctx
+            .index
+            .lock()
+            .map_err(|e| e.to_string())?
+            .rebuild(&ctx.root)
+            .map_err(|e| e.to_string())?;
+        let cards = ctx
+            .index
+            .lock()
+            .map(|i| i.cards().map(|c| c.len()).unwrap_or(0))
+            .unwrap_or(0);
 
-        let handle = app.clone();
-        if let Ok(watcher) = ctx.storage.watch(move |change| {
-            let _ = handle.emit("vault-changed", change);
-        }) {
-            if let Ok(mut slot) = ctx.watch.lock() {
-                *slot = Some(watcher);
+        if let Some(tx) = on_change {
+            if let Ok(watcher) = ctx.storage.watch(move |_change| {
+                let _ = tx.send(Change {
+                    path: String::new(),
+                    removed: false,
+                });
+            }) {
+                if let Ok(mut slot) = ctx.watch.lock() {
+                    *slot = Some(watcher);
+                }
             }
         }
 
         let info = VaultInfo {
-            root: ctx.root.to_string_lossy().to_string(),
-            name: ctx
-                .root
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Aureate".into()),
             docs,
             cards,
-            index_mode: index_mode.to_string(),
+            ..ctx.info()
         };
 
         if let Ok(mut slot) = self.vault.write() {
@@ -156,14 +145,10 @@ impl AppState {
 }
 
 /// Everything Aureate writes at runtime lives here: a folder inside the
-/// application package (`Aureate.app/Contents/Resources/data` on macOS, next to
-/// the executable elsewhere).  Nothing is left in Documents, `Application
-/// Support`, or any other corner of the machine.
-///
-/// A read-only install (`/Applications`, `Program Files`) is the one case that
-/// cannot honour this, so we degrade instead of failing: the OS user-data
-/// folder is the last resort and the UI says so.
-pub fn data_root(app: &AppHandle) -> PathBuf {
+/// application package (`Aureate.app/Contents/Resources/data`), next to the
+/// executable in development, or `$HOME/.aureate/data` as the last resort.
+/// Nothing is left in Documents, `Application Support`, or any other corner.
+pub fn data_root() -> PathBuf {
     if let Some(dir) = std::env::var_os("AUREATE_DATA_DIR") {
         let dir = PathBuf::from(dir);
         if is_writable(&dir) {
@@ -172,11 +157,11 @@ pub fn data_root(app: &AppHandle) -> PathBuf {
     }
 
     let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(res) = app.path().resource_dir() {
-        candidates.push(res.join("data"));
-    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
+            // .app bundle layout: Contents/MacOS/bin → Contents/Resources/data
+            candidates.push(parent.join("../../Resources/data"));
+            candidates.push(parent.join("../Resources/data"));
             candidates.push(parent.join("data"));
         }
     }
@@ -186,17 +171,17 @@ pub fn data_root(app: &AppHandle) -> PathBuf {
         }
     }
 
-    let fallback = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
+    let fallback = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".aureate")
         .join("data");
     let _ = std::fs::create_dir_all(&fallback);
     fallback
 }
 
 /// Writable in the "can I actually create a file here" sense, not the
-/// permission-bit sense — a signed bundle may look writable and not be.
+/// permission-bit sense.
 pub fn is_writable(dir: &Path) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
@@ -211,18 +196,6 @@ pub fn is_writable(dir: &Path) -> bool {
     }
 }
 
-fn index_dir(app: &AppHandle) -> PathBuf {
-    data_root(app).join("index")
-}
-
-fn index_file(app: &AppHandle, root: &Path) -> PathBuf {
-    index_file_in(&index_dir(app), root)
-}
-
-fn index_file_in(base: &Path, root: &Path) -> PathBuf {
-    base.join(format!("{}.db", vault_tag(root)))
-}
-
 /// Short, stable name for a vault path — used for cache files that must not
 /// collide between two folders with the same name.
 fn vault_tag(root: &Path) -> String {
@@ -233,14 +206,19 @@ fn vault_tag(root: &Path) -> String {
 }
 
 /// Deleted files go to the app's own trash, never into the user's folder.
-pub fn trash_dir(app: &AppHandle, root: &Path) -> PathBuf {
-    data_root(app).join("trash").join(vault_tag(root))
+pub fn trash_dir(root: &Path) -> PathBuf {
+    data_root().join("trash").join(vault_tag(root))
 }
 
 /// Open the on-disk index, healing a database a crash left unusable.  The
 /// caller falls back to an in-memory index when this fails.
-fn open_index(app: &AppHandle, root: &Path) -> Result<Index, String> {
-    let path = index_file(app, root);
+fn open_index(root: &Path) -> Result<Index, String> {
+    let path = data_root()
+        .join("index")
+        .join(format!("{}.db", vault_tag(root)));
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     match Index::open(&path) {
         Ok(index) => Ok(index),
         Err(_) => {
@@ -254,32 +232,26 @@ fn open_index(app: &AppHandle, root: &Path) -> Result<Index, String> {
     }
 }
 
-pub fn settings_path(app: &AppHandle) -> PathBuf {
-    data_root(app).join("settings.json")
+pub fn settings_path() -> PathBuf {
+    data_root().join("settings.json")
 }
 
 /// Font search order: bundled resources, dev checkout, executable sidecar,
 /// optional user directory, then system fallbacks.
-pub fn resolve_font_paths(app: &AppHandle) -> Vec<PathBuf> {
+pub fn resolve_font_paths() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-
-    if let Ok(res) = app.path().resource_dir() {
-        dirs.push(res.join("assets/fonts"));
-        dirs.push(res.join("fonts"));
+    if let Some(extra) = std::env::var_os("AUREATE_FONT_DIR") {
+        dirs.push(PathBuf::from(extra));
     }
-    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fonts"));
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
+            dirs.push(parent.join("../../Resources/assets/fonts"));
+            dirs.push(parent.join("../Resources/assets/fonts"));
             dirs.push(parent.join("assets/fonts"));
             dirs.push(parent.join("fonts"));
         }
     }
-    if let Some(extra) = std::env::var_os("AUREATE_FONT_DIR") {
-        dirs.push(PathBuf::from(extra));
-    }
-    if let Ok(data) = app.path().app_data_dir() {
-        dirs.push(data.join("fonts"));
-    }
+    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fonts"));
     dirs.extend(aur_export::fonts::system_font_candidates());
     dirs.retain(|p| p.exists());
     dirs

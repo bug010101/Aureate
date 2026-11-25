@@ -1,50 +1,60 @@
 # Aureate
 
-本地优先的 Markdown 写作器：**屏幕上预览，纸上只出 PDF**。桌面三端（macOS / Windows / Linux）。
+本地优先的 Markdown 写作器：**屏幕上预览，纸上只出 PDF**。当前平台：macOS（universal dmg）。
 
-- **纯 Rust 后端**：`pulldown-cmark` → 自有 AST → **Typst 0.15** 排版 → PDF。所有平台产出字节级一致的 PDF，字体随包嵌入（Noto Serif/Sans SC + Typst 自带数学/西文字体），不依赖系统环境。
-- **零构建前端**：`ui/` 目录是原生 HTML/CSS/JS，无 npm、无打包器。全部逻辑在 Rust 命令层（30+ 个 Tauri 命令）。
-- **公式**：预览与 PDF 用同一个 Typst 编译器渲染（`preview_math` 把 TeX 转成行内 SVG），所见即所得。
-- **研究卡**：实验卡/论文卡/想法卡等六段骨架卡，SQLite FTS5 全文检索、反向链接、进度台账；`[[卡ID]]` 双链。
-- **导出**：单文档 PDF / 整仓批量 PDF / 卡册 PDF（一卡一页 A6/A5）。
-- **不落数据**：运行时数据（索引缓存、偏好设置、回收站）全部写在应用包内的 `data/` 目录，电脑上其他位置不留任何文件；启动时永远由你自己选文件夹，程序不会自动打开或创建任何目录。
-- **单文件打开**：可以直接打开一个 `.md` 文件（引导页按钮、侧栏「打开文件」、拖拽均可），所在文件夹自动成为本次工作目录。
-- **目录边界**：程序只会打开你工作目录里的文件和本次导出的 PDF，绝不打开应用自身目录；拖拽 `.md` 进窗口同样直接打开。
+- **100% Rust**：界面是 `egui 0.37`（eframe），排版是 `Typst 0.15`。没有 HTML、没有 JavaScript、没有 Node、没有 WebView，也没有 Tauri —— 整个程序就是一个原生 Rust 二进制。
+- **预览即 PDF**：预览不是另画一遍，而是用写 PDF 的**同一个 Typst 引擎**编译，再用 `typst-render` 栅格化成页面图贴到界面上。主题、表格、公式、页码、页眉，预览里什么样，PDF 就什么样。
+- **排版**：四套主题（GitHub / 学术论文 / 商务 / 极简），纸张 A4 / A5 / Letter / Legal（卡册另用 A6），三档页边距；页眉页脚、页码、目录、PDF 书签。
+- **导出**：单文档 PDF / 整目录批量 PDF / 卡册 PDF（一卡一页）。
+- **研究卡**：frontmatter 驱动的六段骨架卡，四视图（表单 / 时间线 / 看板 / 周历），SQLite FTS5 全文检索，`[[卡ID]]` 双链。
+- **字体自带**：4 个 Noto（思源黑体 / 宋体 × Regular / Bold）用 `include_bytes!` 打进二进制，配合 Typst 内置数学与西文字体，不依赖系统字体，换机不掉字。
+- **保存时机**：`Cmd+S` 手动保存；切换文档前、导出 PDF 前自动落盘；状态栏显示「已保存 / 未保存」与字数。
+- **不落数据**：索引、偏好、回收站全部写在应用包内 `data/`（`Aureate.app/Contents/Resources/data`）；只有包内不可写时才退回 `~/.aureate/data`，状态栏会显示「索引：内存」。
+- **目录边界**：启动永远由你手动选文件夹或单个 `.md` 文件；程序不记路径、不自动打开任何目录，也不打开应用自身目录。
 
 ## 工作区结构
 
 ```
-crates/aur-core      Markdown/frontmatter/卡片领域模型（无 Tauri/Typst 依赖）
-crates/aur-vault     仓库存储：原子写、回收站、文件监听
-crates/aur-index     SQLite FTS5 索引、反链、台账
-crates/aur-render    AST → 预览 HTML（syntect 高亮，XSS 转义）
-crates/aur-export    AST → Typst 源码 → PDF/SVG 公式
-crates/aur-app       Tauri 壳：命令层、字体、图标（桌面三端）
-ui/                  零构建前端（编辑器/预览/卡片/搜索/导出/设置）
-.github/workflows    ci.yml（三平台测试）+ release.yml（三端打包）
+crates/aur-core      Markdown 解析 / frontmatter / 卡片领域模型（无 UI、无 Typst 依赖）
+crates/aur-vault     文件仓库：原子写、回收站、文件监听
+crates/aur-index     SQLite FTS5 索引、反向链接、周历台账
+crates/aur-export    Markdown AST → Typst 源码 → PDF；同一套源码栅格化成预览页
+crates/aur-app       egui 界面：文件树 / 编辑器 / 预览 / 卡片 / 搜索 / 导出 / 设置
+.github/workflows    ci.yml（fmt + clippy + test）、release.yml（macOS universal dmg）
 ```
 
-## 本地开发（只需 Rust）
+依赖方向：`aur-app` → {`aur-core`, `aur-vault`, `aur-index`, `aur-export`}，`aur-core` 不依赖本项目任何其他 crate。
+
+## 本地开发（只需 Rust 工具链）
 
 ```bash
-cargo test --workspace          # 41 个测试
-cargo run -p aur-app            # 桌面调试运行
+cargo run -p aur-app      # 调试运行
+cargo test                # 31 个测试
+cargo clippy --all-targets -- -D warnings
 ```
 
-启动后自己选一个文件夹当仓库，或直接选一个 `.md` 文件（其所在文件夹即工作目录）。每次启动都要手动选，程序不会记住路径、不会自动打开。Aureate 只往这个文件夹写你自己的 `.md`，不建索引目录、不建 `docs/`、不建回收站。
+以 macOS 为例，建议给独立 target 目录避免和 IDE 的 rust-analyzer 抢锁：
 
-## GitHub Actions 打包（唯一出包方式）
+```bash
+CARGO_TARGET_DIR=target/run cargo run -p aur-app
+```
 
-- 推送 tag `v*` 或手动触发 **release** workflow：
-  - **macOS**：universal dmg（aarch64 + x86_64）
-  - **Windows**：msi + nsis 安装器
-  - **Linux**：deb + AppImage
-  产物在各 job 的 **Artifacts** 里下载。
-- 每次 push/PR 会跑 **ci** workflow：三平台 fmt + clippy(-D warnings) + 全量测试。
+## 使用
 
-## macOS 首次打开未签名应用
+1. 启动后选一个文件夹当工作目录，或直接选一个 `.md`（其所在文件夹自动成为工作目录）
+2. 左侧文件树管理文档（右键可重命名 / 删除，删除进应用内回收站，不进废纸篓）
+3. 顶部切换「编辑 / 分屏 / 预览」；设置里改主题、纸张、页边距，预览 600 ms 内重编译
+4. 快捷键：`Cmd+S` 保存、`Cmd+E` 导出 PDF、`Cmd+F` 搜索、`Cmd+N` 新建文档
 
-Action 产物没有开发者签名。下载 dmg 安装后若提示"无法打开"：
+## 打包（只有 GitHub Actions）
+
+推送 tag `v*`（或手动触发 release workflow）：
+
+1. `cargo build --release --target universal-apple-darwin`（arm64 + x86_64）
+2. 手工组装 `Aureate.app`（Info.plist + 图标 + ad-hoc 签名）
+3. `hdiutil` 出 dmg，上传 artifact，并自动挂到对应 tag 的 **Releases**
+
+产物没有开发者签名。下载安装后若提示「无法打开」：
 
 ```bash
 xattr -cr /Applications/Aureate.app
@@ -55,10 +65,11 @@ xattr -cr /Applications/Aureate.app
 | 内容 | 位置 |
 | --- | --- |
 | 你的文档 | 你自己选的那个文件夹，只有 `.md` |
-| 索引缓存 / 偏好 / 回收站 | 应用包内 `data/`（macOS 为 `Aureate.app/Contents/Resources/data`） |
-
-装在 `/Applications`（只读）时无法往包内写，才会退回系统用户数据目录，界面会提示"索引暂不可用"。开发态和放进 `~/Applications` 时都符合上表。
+| 索引缓存 / 偏好 / 回收站 | 应用包内 `data/` |
+| 兜底（包内不可写时） | `~/.aureate/data` |
 
 ## 已知边界
 
-- 公式：TeX → Typst 转换覆盖 frac/sqrt/上下标/矩阵/cases/希腊字母/关系符；未知宏按字面量降级显示，不会导致整篇编译失败。
+- **内嵌 HTML 不渲染**：`<table>`、`<font color>` 这类 HTML 在预览和 PDF 里都不会变成表格或颜色。表格请用 Markdown 管道语法 `| a | b |`，两侧都正常。
+- **公式**：`$...$` / `$$...$$` 经 TeX → Typst 转换，覆盖 frac / sqrt / 上下标 / 矩阵 / cases / 希腊字母 / 关系符；未知宏按字面量降级，不会让整篇编译失败。
+- **预览与导出共用同一份 Typst 源码**，不存在「预览好看、PDF 崩掉」的两套排版，但预览是页面栅格图，不能选中文字。

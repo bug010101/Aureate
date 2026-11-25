@@ -8,26 +8,18 @@ license.workspace = true
 authors.workspace = true
 description = "Aureate — a Markdown writer that only exports PDF"
 
-[lib]
-name = "aur_app"
-crate-type = ["rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
+[[bin]]
+name = "Aureate"
+path = "src/main.rs"
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-dialog = "2"
-tauri-plugin-opener = "2"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+rfd = "0.18"
 serde = { workspace = true }
 serde_json = { workspace = true }
 aur-core = { path = "../aur-core" }
 aur-vault = { path = "../aur-vault" }
 aur-index = { path = "../aur-index" }
-aur-render = { path = "../aur-render" }
 aur-export = { path = "../aur-export" }
 chrono = { workspace = true }
-base64 = "0.22"
 tracing = { workspace = true }
-
-tauri-plugin-single-instance = "2"

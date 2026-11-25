@@ -49,12 +49,14 @@ pub struct BatchReport {
 }
 
 /// Export one markdown document.
+#[allow(clippy::too_many_arguments)]
 pub fn export_markdown(
     markdown: &str,
     doc_path: Option<&Path>,
     output: &Path,
     opts: &ExportOptions,
     font_paths: &[PathBuf],
+    embedded_fonts: &[(&'static str, Vec<u8>)],
 ) -> Result<ExportReport, ExportError> {
     let title_hint = doc_path
         .and_then(|p| p.file_name())
@@ -65,7 +67,7 @@ pub fn export_markdown(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
 
-    let font_set = fonts::load(font_paths);
+    let font_set = fonts::load_embedded(font_paths, embedded_fonts);
     let has_math = contains_math(&doc);
 
     let mut attempts = 0;
@@ -202,6 +204,7 @@ pub fn export_folder(
     out_dir: Option<&Path>,
     opts: &ExportOptions,
     font_paths: &[PathBuf],
+    embedded_fonts: &[(&'static str, Vec<u8>)],
     mut on_progress: impl FnMut(&BatchItem),
 ) -> BatchReport {
     let files = collect_markdown(input);
@@ -225,7 +228,14 @@ pub fn export_folder(
         } else {
             match std::fs::read_to_string(file) {
                 Ok(markdown) => {
-                    match export_markdown(&markdown, Some(file), &target, opts, font_paths) {
+                    match export_markdown(
+                        &markdown,
+                        Some(file),
+                        &target,
+                        opts,
+                        font_paths,
+                        embedded_fonts,
+                    ) {
                         Ok(rep) => BatchItem {
                             input: file.clone(),
                             output: target,
@@ -269,8 +279,9 @@ pub fn export_cardbook(
     output: &Path,
     opts: &CardbookOptions,
     font_paths: &[PathBuf],
+    embedded_fonts: &[(&'static str, Vec<u8>)],
 ) -> Result<ExportReport, ExportError> {
-    let font_set = fonts::load(font_paths);
+    let font_set = fonts::load_embedded(font_paths, embedded_fonts);
     let gen = typst_gen::generate_cardbook(cards, vault_root, opts, &font_set);
     let mut warnings = font_set.warnings.clone();
     warnings.extend(gen.warnings.clone());
@@ -291,6 +302,7 @@ pub fn generate_source(
     doc_path: Option<&Path>,
     opts: &ExportOptions,
     font_paths: &[PathBuf],
+    embedded_fonts: &[(&'static str, Vec<u8>)],
 ) -> String {
     let title_hint = doc_path
         .and_then(|p| p.file_name())
@@ -300,6 +312,6 @@ pub fn generate_source(
         .and_then(|p| p.parent())
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let font_set = fonts::load(font_paths);
+    let font_set = fonts::load_embedded(font_paths, embedded_fonts);
     typst_gen::generate(&doc, opts, &font_set, &base_dir).source
 }

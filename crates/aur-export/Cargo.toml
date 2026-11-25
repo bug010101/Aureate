@@ -11,6 +11,7 @@ authors.workspace = true
 aur-core = { path = "../aur-core" }
 typst = { workspace = true }
 typst-pdf = { workspace = true }
+typst-render = { workspace = true }
 typst-layout = "0.15.1"
 typst-svg = { workspace = true }
 typst-assets = { workspace = true }

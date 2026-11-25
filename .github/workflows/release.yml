@@ -1,7 +1,7 @@
 name: release
 
 # Packaging happens on GitHub only — no local build scripts, no Node toolchain.
-# macOS universal dmg only.
+# Pure Rust app: cargo build → hand-assembled .app → dmg.
 on:
   push:
     tags: ["v*"]
@@ -29,21 +29,39 @@ jobs:
           workspaces: ". -> target"
           cache-on-failure: "true"
 
-      # The Tauri CLI is a Rust binary; installing it here keeps the build
-      # free of any JavaScript package manager.
-      - name: Install Tauri CLI
-        uses: taiki-e/install-action@v2
-        with:
-          tool: tauri-cli@2
+      - name: Build universal binary
+        run: cargo build --release --target universal-apple-darwin --bin Aureate
 
-      - name: Build bundle
-        working-directory: crates/aur-app
-        run: cargo tauri build --target universal-apple-darwin --bundles dmg
+      - name: Assemble Aureate.app
+        run: |
+          APP=Aureate.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/universal-apple-darwin/release/Aureate "$APP/Contents/MacOS/Aureate"
+          cp crates/aur-app/icons/icon.icns "$APP/Contents/Resources/Aureate.icns"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Aureate</string>
+            <key>CFBundleDisplayName</key><string>Aureate</string>
+            <key>CFBundleIdentifier</key><string>com.zhoujin.aureate</string>
+            <key>CFBundleExecutable</key><string>Aureate</string>
+            <key>CFBundleIconFile</key><string>Aureate</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0.5</string>
+            <key>CFBundleVersion</key><string>1.0.5</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          codesign --force --deep --sign - "$APP"
 
-      - name: Collect artifacts
+      - name: Make dmg
         run: |
           mkdir -p dist
-          find . -type f -name '*.dmg' -not -path './dist/*' -exec cp {} dist/ \;
+          hdiutil create -volname Aureate -srcfolder Aureate.app -ov -format UDZO "dist/Aureate-1.0.5-macos-universal.dmg"
           ls -lh dist
 
       - uses: actions/upload-artifact@v4
