@@ -31,7 +31,7 @@ jobs:
       - name: Install Tauri CLI
         uses: taiki-e/install-action@v2
         with:
-          tool: tauri-cli@^2
+          tool: tauri-cli@2
 
       - name: Build bundle
         working-directory: crates/aur-app
