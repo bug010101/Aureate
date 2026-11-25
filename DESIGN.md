@@ -11,7 +11,7 @@
 | 技术栈 | 100% Rust —— `egui 0.37`（eframe）界面 + `Typst 0.15` 排版 |
 | 输出格式 | 仅 PDF |
 | 参考实现 | [M2P](https://github.com/bug010101/M2P)（Electron + Chromium printToPDF） |
-| 版本 | 1.0.5 |
+| 版本 | 1.0.6 |
 
 ---
 
@@ -294,7 +294,7 @@ trait Storage {
 | M2 | 四主题 + 目录 + 书签 + 页眉页脚 + 批量导出 | 完成 |
 | M3 | 卡片系统（frontmatter + 四视图 + FTS + 双链） | 完成 |
 | M4 | macOS 打包（GitHub Actions → dmg → Release） | 完成 |
-| M5 | 界面从 Tauri/HTML 整体重写为 egui 纯 Rust | 1.0.5 |
+| M5 | 界面从 Tauri/HTML 整体重写为 egui 纯 Rust | 1.0.6 |
 | M6 | 打磨：暗色模式、字体管理、崩溃日志 | 进行中 |
 
 ---

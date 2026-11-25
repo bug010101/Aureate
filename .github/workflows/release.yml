@@ -30,13 +30,24 @@ jobs:
           cache-on-failure: "true"
 
       - name: Build universal binary
-        run: cargo build --release --target universal-apple-darwin --bin Aureate
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          cargo build --release --target aarch64-apple-darwin --bin Aureate
+          cargo build --release --target x86_64-apple-darwin --bin Aureate
+          mkdir -p target/universal/release
+          lipo -create \
+            target/aarch64-apple-darwin/release/Aureate \
+            target/x86_64-apple-darwin/release/Aureate \
+            -output target/universal/release/Aureate
+          lipo -info target/universal/release/Aureate
 
       - name: Assemble Aureate.app
         run: |
           APP=Aureate.app
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp target/universal-apple-darwin/release/Aureate "$APP/Contents/MacOS/Aureate"
+          cp target/universal/release/Aureate "$APP/Contents/MacOS/Aureate"
+          chmod +x "$APP/Contents/MacOS/Aureate"
           cp crates/aur-app/icons/icon.icns "$APP/Contents/Resources/Aureate.icns"
           cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -49,8 +60,8 @@ jobs:
             <key>CFBundleExecutable</key><string>Aureate</string>
             <key>CFBundleIconFile</key><string>Aureate</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.0.5</string>
-            <key>CFBundleVersion</key><string>1.0.5</string>
+            <key>CFBundleShortVersionString</key><string>1.0.6</string>
+            <key>CFBundleVersion</key><string>1.0.6</string>
             <key>LSMinimumSystemVersion</key><string>11.0</string>
             <key>NSHighResolutionCapable</key><true/>
           </dict>
@@ -61,7 +72,7 @@ jobs:
       - name: Make dmg
         run: |
           mkdir -p dist
-          hdiutil create -volname Aureate -srcfolder Aureate.app -ov -format UDZO "dist/Aureate-1.0.5-macos-universal.dmg"
+          hdiutil create -volname Aureate -srcfolder Aureate.app -ov -format UDZO "dist/Aureate-1.0.6-macos-universal.dmg"
           ls -lh dist
 
       - uses: actions/upload-artifact@v4
