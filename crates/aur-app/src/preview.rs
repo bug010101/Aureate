@@ -7,8 +7,6 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use aur_export::{render_pages, ExportOptions, PageImage};
 
-use crate::fonts;
-
 const PIXELS_PER_PT: f32 = 2.0;
 
 pub struct PreviewJob {
@@ -33,7 +31,6 @@ pub fn spawn_worker() -> (Sender<PreviewJob>, Receiver<PreviewResult>) {
     let _ = std::thread::Builder::new()
         .name("aureate-preview".into())
         .spawn(move || {
-            let embedded = fonts::embedded();
             while let Ok(mut job) = job_rx.recv() {
                 // Only the newest job matters — skip stale ones.
                 while let Ok(newer) = job_rx.try_recv() {
@@ -44,7 +41,7 @@ pub fn spawn_worker() -> (Sender<PreviewJob>, Receiver<PreviewResult>) {
                     job.doc_path.as_deref(),
                     &job.options,
                     &job.font_paths,
-                    &embedded,
+                    &[],
                     PIXELS_PER_PT,
                 ) {
                     Ok((pages, warnings)) => PreviewResult {

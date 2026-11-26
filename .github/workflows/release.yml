@@ -49,6 +49,7 @@ jobs:
           cp target/universal/release/Aureate "$APP/Contents/MacOS/Aureate"
           chmod +x "$APP/Contents/MacOS/Aureate"
           cp crates/aur-app/icons/icon.icns "$APP/Contents/Resources/Aureate.icns"
+          cp -R crates/aur-app/assets/fonts "$APP/Contents/Resources/fonts"
           cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -60,8 +61,8 @@ jobs:
             <key>CFBundleExecutable</key><string>Aureate</string>
             <key>CFBundleIconFile</key><string>Aureate</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.0.6</string>
-            <key>CFBundleVersion</key><string>1.0.6</string>
+            <key>CFBundleShortVersionString</key><string>1.0.7</string>
+            <key>CFBundleVersion</key><string>1.0.7</string>
             <key>LSMinimumSystemVersion</key><string>11.0</string>
             <key>NSHighResolutionCapable</key><true/>
           </dict>
@@ -71,8 +72,10 @@ jobs:
 
       - name: Make dmg
         run: |
-          mkdir -p dist
-          hdiutil create -volname Aureate -srcfolder Aureate.app -ov -format UDZO "dist/Aureate-1.0.6-macos-universal.dmg"
+          mkdir -p stage dist
+          cp -R Aureate.app stage/
+          ln -s /Applications stage/Applications
+          hdiutil create -volname Aureate -srcfolder stage -ov -format UDZO "dist/Aureate-1.0.7-macos-universal.dmg"
           ls -lh dist
 
       - uses: actions/upload-artifact@v4

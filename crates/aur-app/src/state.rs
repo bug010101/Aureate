@@ -236,23 +236,11 @@ pub fn settings_path() -> PathBuf {
     data_root().join("settings.json")
 }
 
-/// Font search order: bundled resources, dev checkout, executable sidecar,
-/// optional user directory, then system fallbacks.
+/// Font search order: bundled resources (see `crate::fonts`), then system
+/// fallbacks.
 pub fn resolve_font_paths() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(extra) = std::env::var_os("AUREATE_FONT_DIR") {
-        dirs.push(PathBuf::from(extra));
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            dirs.push(parent.join("../../Resources/assets/fonts"));
-            dirs.push(parent.join("../Resources/assets/fonts"));
-            dirs.push(parent.join("assets/fonts"));
-            dirs.push(parent.join("fonts"));
-        }
-    }
-    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fonts"));
+    let mut dirs = crate::fonts::font_dirs();
     dirs.extend(aur_export::fonts::system_font_candidates());
-    dirs.retain(|p| p.exists());
+    dirs.retain(|p| p.is_dir());
     dirs
 }

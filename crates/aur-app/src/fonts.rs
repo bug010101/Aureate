@@ -1,23 +1,36 @@
-//! Fonts compiled into the binary.  The PDF pipeline and the UI both use
-//! them, so a read-only install still renders CJK correctly.
+//! Bundled font locations.  The four Noto CJK fonts live in the app
+//! bundle's `Contents/Resources/fonts` — one copy shared by both
+//! architectures of the universal binary, keeping it small.
 
-pub fn embedded() -> Vec<(&'static str, Vec<u8>)> {
-    vec![
-        (
-            "NotoSansSC-Regular.otf",
-            include_bytes!("../assets/fonts/NotoSansSC-Regular.otf").to_vec(),
-        ),
-        (
-            "NotoSansSC-Bold.otf",
-            include_bytes!("../assets/fonts/NotoSansSC-Bold.otf").to_vec(),
-        ),
-        (
-            "NotoSerifSC-Regular.otf",
-            include_bytes!("../assets/fonts/NotoSerifSC-Regular.otf").to_vec(),
-        ),
-        (
-            "NotoSerifSC-Bold.otf",
-            include_bytes!("../assets/fonts/NotoSerifSC-Bold.otf").to_vec(),
-        ),
-    ]
+use std::path::PathBuf;
+
+/// Candidate directories that may contain the bundled fonts, best first.
+pub fn font_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(extra) = std::env::var_os("AUREATE_FONT_DIR") {
+        dirs.push(PathBuf::from(extra));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            // Aureate.app/Contents/MacOS/<exe> → Contents/Resources/fonts
+            dirs.push(parent.join("../Resources/fonts"));
+            // Dev runs with the assets dir copied next to the binary.
+            dirs.push(parent.join("assets/fonts"));
+        }
+    }
+    // Dev checkout (`cargo run`): fonts still live in the source tree.
+    dirs.push(PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/fonts"
+    )));
+    dirs.retain(|p| p.is_dir());
+    dirs
+}
+
+/// Locate a bundled font by file name on disk.
+pub fn find_font(name: &str) -> Option<PathBuf> {
+    font_dirs()
+        .iter()
+        .map(|d| d.join(name))
+        .find(|p| p.is_file())
 }

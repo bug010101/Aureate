@@ -20,8 +20,6 @@ use crate::prefs::{self, Prefs};
 use crate::preview::{spawn_worker, PreviewJob};
 use crate::state::{AppState, VaultInfo};
 
-const CJK_FONT: &[u8] = include_bytes!("../assets/fonts/NotoSansSC-Regular.otf");
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum SideTab {
     Files,
@@ -432,7 +430,7 @@ impl AureateApp {
                     &out.clone(),
                     &options,
                     &fonts,
-                    &crate::fonts::embedded(),
+                    &[],
                 )
                 .map_err(|e| e.to_string());
                 let _ = tx.send(result.map(ExportDone::Pdf));
@@ -472,15 +470,9 @@ impl AureateApp {
         let _ = std::thread::Builder::new()
             .name("aureate-cardbook".into())
             .spawn(move || {
-                let result = aur_export::export_cardbook(
-                    &cards,
-                    &root,
-                    &out.clone(),
-                    &options,
-                    &fonts,
-                    &crate::fonts::embedded(),
-                )
-                .map_err(|e| e.to_string());
+                let result =
+                    aur_export::export_cardbook(&cards, &root, &out.clone(), &options, &fonts, &[])
+                        .map_err(|e| e.to_string());
                 let _ = tx.send(result.map(ExportDone::Pdf));
             });
         self.export_rx = Some(rx);
@@ -503,14 +495,8 @@ impl AureateApp {
         let _ = std::thread::Builder::new()
             .name("aureate-batch".into())
             .spawn(move || {
-                let report = aur_export::export_folder(
-                    &dir.clone(),
-                    None,
-                    &options,
-                    &fonts,
-                    &crate::fonts::embedded(),
-                    |_| {},
-                );
+                let report =
+                    aur_export::export_folder(&dir.clone(), None, &options, &fonts, &[], |_| {});
                 let _ = tx.send(Ok(ExportDone::Batch(report)));
             });
         self.export_rx = Some(rx);
@@ -1749,8 +1735,17 @@ fn margin_label(margin: aur_export::Margin) -> &'static str {
 
 fn setup_fonts(ctx: &egui::Context) {
     let mut defs = FontDefinitions::default();
-    defs.font_data
-        .insert("noto-sc".into(), FontData::from_static(CJK_FONT).into());
+    let loaded = crate::fonts::find_font("NotoSansSC-Regular.otf")
+        .and_then(|p| std::fs::read(p).ok())
+        .map(|bytes| {
+            defs.font_data
+                .insert("noto-sc".into(), FontData::from_owned(bytes).into());
+            true
+        })
+        .unwrap_or(false);
+    if !loaded {
+        return;
+    }
     if let Some(family) = defs.families.get_mut(&egui::FontFamily::Proportional) {
         family.insert(0, "noto-sc".into());
     }
